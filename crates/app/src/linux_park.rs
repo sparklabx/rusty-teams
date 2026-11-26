@@ -71,7 +71,7 @@ pub fn spawn(clock: Arc<ParkClock>, browser: browser::Browser, endpoint: &str) {
                 continue;
             }
             // False for a parked tab, a login page and a Teams that has not signed in yet.
-            if !browser.teams_has_msal_cache().await || !clock.due(Instant::now()) {
+            if !browser.teams_has_msal_cache(None).await || !clock.due(Instant::now()) {
                 continue;
             }
             match park(&transport).await {

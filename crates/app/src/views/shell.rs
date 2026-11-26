@@ -1138,6 +1138,9 @@ impl Render for AppShell {
                             state.retry_live();
                         })
                     }),
+                    cx.listener(|this, _, _, cx| {
+                        this.state.update(cx, |state, cx| state.leave_guest_org(cx))
+                    }),
                 )
             });
         let title_bar = render_title_bar(
