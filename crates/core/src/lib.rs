@@ -188,7 +188,7 @@ pub use receipts::{ReceiptReader, ReceiptState};
 pub use remote::{ChatsPage, DeltaPage, Remote, RemotePage};
 pub use scheduled::NOTES_CHAT_ID;
 pub use skin_tone::{skin_tone, store_account_skin_tone};
-pub use spans::{FontSize, Span, html_to_spans};
+pub use spans::{CODE_BLOCK_ITEMTYPE, FontSize, Span, html_to_spans};
 pub use store::{ConversationHit, HIGHLIGHT_END, HIGHLIGHT_START, SearchHit};
 pub use stored::{
     AttachmentInfo, FileCard, FileKind, ImageKind, ImageRef, MentionInfo, PROFILE_LINK_PREFIX,

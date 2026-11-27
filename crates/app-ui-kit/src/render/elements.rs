@@ -15,13 +15,18 @@ const INDENT_STEP: f32 = teams_core::INDENT_PIXELS as f32;
 const MARKER_WIDTH: f32 = 18.;
 const WIDE_MARKER_WIDTH: f32 = 26.;
 const BULLETS: [&str; 3] = ["\u{2022}", "\u{25e6}", "\u{25aa}"];
-const CODE_HEADER_MIN_LINES: usize = 3;
 const PLAIN_LANGUAGE: &str = "text";
 const MIN_CONTRAST: f32 = 4.5;
 const HIGHLIGHT_ALPHA: f32 = 0.3;
 const CODE_LINE_PADDING_X: f32 = 6.;
 const CODE_LINE_PADDING_Y: f32 = 4.;
 const CODE_LINE_RADIUS: f32 = 4.;
+const COPIED_SHOWN: std::time::Duration = std::time::Duration::from_millis(1500);
+
+// shortcut: one "Copied" at a time app-wide, which is all a click can produce.
+// The click number lets a later click on the same block keep "Copied" for its full time.
+static COPIED_BLOCK: std::sync::Mutex<Option<(String, u64)>> = std::sync::Mutex::new(None);
+static COPY_CLICKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub const CODE_LINE_TAG: &str = "message/code-line";
 pub const CODE_BLOCK_TAG: &str = "message/code-block";
 
@@ -135,7 +140,6 @@ fn render_code(language: Option<&str>, code: &str, id: String, own: bool, cx: &A
             code.to_owned(),
             highlights,
         ));
-    let show_header = language.is_some() || code.lines().count() >= CODE_HEADER_MIN_LINES;
     v_flex()
         .debug_selector(|| CODE_BLOCK_TAG.into())
         .w_full()
@@ -148,14 +152,12 @@ fn render_code(language: Option<&str>, code: &str, id: String, own: bool, cx: &A
         .font_family(code_font(cx))
         .text_size(px(12.5))
         .line_height(relative(1.5))
-        .when(show_header, |container| {
-            container.child(code_header(
-                language.unwrap_or(PLAIN_LANGUAGE),
-                code,
-                &id,
-                own,
-            ))
-        })
+        .child(code_header(
+            language.unwrap_or(PLAIN_LANGUAGE),
+            code,
+            &id,
+            own,
+        ))
         .child(body)
         .into_any_element()
 }
@@ -201,6 +203,10 @@ fn code_header(language: &str, code: &str, id: &str, own: bool) -> Div {
         theme::text_muted()
     };
     let code = code.to_owned();
+    let copy_id = format!("{id}-copy");
+    let copied = COPIED_BLOCK
+        .lock()
+        .is_ok_and(|block| block.as_ref().is_some_and(|(shown, _)| *shown == copy_id));
     h_flex()
         .w_full()
         .h(px(26.))
@@ -214,7 +220,7 @@ fn code_header(language: &str, code: &str, id: &str, own: bool) -> Div {
         .child(language.to_owned())
         .child(
             h_flex()
-                .id(ElementId::Name(format!("{id}-copy").into()))
+                .id(ElementId::Name(copy_id.clone().into()))
                 .h(px(20.))
                 .px(px(6.))
                 .gap(px(4.))
@@ -223,11 +229,44 @@ fn code_header(language: &str, code: &str, id: &str, own: bool) -> Div {
                 .cursor_pointer()
                 .hover(|button| button.bg(theme::inline_code_fill(false)))
                 .on_click(move |_, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(code.clone()))
+                    cx.write_to_clipboard(ClipboardItem::new_string(code.clone()));
+                    show_copied(copy_id.clone(), cx);
                 })
-                .child(symbol("content_copy", 13., muted))
-                .child("Copy"),
+                .child(symbol(
+                    if copied { "check" } else { "content_copy" },
+                    13.,
+                    muted,
+                ))
+                // The hidden "Copied" keeps the width, so a narrow block does not grow on click.
+                .child(
+                    div()
+                        .relative()
+                        .child(div().invisible().child("Copied"))
+                        .child(div().absolute().top_0().left_0().child(if copied {
+                            "Copied"
+                        } else {
+                            "Copy"
+                        })),
+                ),
         )
+}
+
+fn show_copied(copy_id: String, cx: &mut App) {
+    let click = COPY_CLICKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut block) = COPIED_BLOCK.lock() {
+        *block = Some((copy_id.clone(), click));
+    }
+    cx.refresh_windows();
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(COPIED_SHOWN).await;
+        let ended = COPIED_BLOCK
+            .lock()
+            .is_ok_and(|mut block| block.take_if(|shown| shown.1 == click).is_some());
+        if ended {
+            cx.update(|cx| cx.refresh_windows());
+        }
+    })
+    .detach();
 }
 
 fn token_style(token: Token) -> HighlightStyle {

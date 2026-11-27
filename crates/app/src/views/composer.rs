@@ -4778,16 +4778,30 @@ mod tests {
         }
 
         #[gpui_kit::test]
+        fn backspace_after_a_fence_gives_it_back_for_a_language(cx: &mut TestAppContext) {
+            let mut typist = typist(cx);
+            typist.type_text("```");
+            assert_eq!(typist.draft().lines(), [teams_core::LineKind::Code(None)]);
+            typist.press("backspace");
+            assert_eq!(typist.value(), "```");
+            typist.type_text("py");
+            typist.press("enter");
+            assert_eq!(
+                typist.draft().lines(),
+                [teams_core::LineKind::Code(Some("py".into()))]
+            );
+        }
+
+        #[gpui_kit::test]
         fn delete_at_a_code_line_end_joins_without_padding(cx: &mut TestAppContext) {
             let mut typist = typist(cx);
             typist.type_text("```");
-            typist.press("enter");
             typist.type_text("a");
             typist.press("enter");
             typist.type_text("b");
             typist.press("up end delete");
             assert_eq!(
-                typist.outgoing().html(),
+                typist.outgoing().draft.to_html(),
                 "<pre class=\"language-plaintext skipProofing\" spellcheck=\"false\"><code>ab</code></pre>"
             );
         }
@@ -4797,7 +4811,6 @@ mod tests {
         fn copied_code_has_no_padding_in_the_plain_text(cx: &mut TestAppContext) {
             let mut typist = typist(cx);
             typist.type_text("```");
-            typist.press("enter");
             typist.type_text("  x");
             typist.press("ctrl-a ctrl-c");
             let text = typist.cx.read_from_clipboard().and_then(|item| item.text());
@@ -4939,7 +4952,6 @@ mod tests {
         fn code_blocks_take_markdown_and_smileys_literally(cx: &mut TestAppContext) {
             let mut typist = typist(cx);
             typist.type_text("```");
-            typist.press("enter");
             typist.type_text(":) ");
             typist
                 .cx
@@ -4954,7 +4966,7 @@ mod tests {
             );
             let outgoing = typist.outgoing();
             assert_eq!(
-                outgoing.html(),
+                outgoing.draft.to_html(),
                 "<pre class=\"language-plaintext skipProofing\" spellcheck=\"false\"><code>:) **x**</code></pre>"
             );
         }

@@ -783,6 +783,18 @@ impl Draft {
             return None;
         }
         let before = &self.text[content.start..cursor];
+        // Teams opens the block on the third backtick; undo gives back the fence for ```lang + Enter.
+        if self.lines[index] == LineKind::Text && before == FENCE && cursor == content.end {
+            self.splice(content.clone(), "", &[]);
+            let cursor = self.set_line_kind(index, LineKind::Code(None), None, content.start);
+            return Some((
+                cursor,
+                TypingStyle {
+                    at: cursor,
+                    ..TypingStyle::default()
+                },
+            ));
+        }
         if self.lines[index] == LineKind::Text
             && let Some((kind, number)) = line_shortcut(before)
         {
@@ -3037,7 +3049,7 @@ mod tests {
 
     #[test]
     fn fence_and_enter_open_a_code_block_that_enter_continues() {
-        let mut draft = typed_draft("```rust");
+        let mut draft = Draft::plain("```rust");
         let cursor = draft.break_line(draft.text().len(), false).unwrap();
         assert_eq!((draft.text(), cursor), ("", 0));
         assert_eq!(draft.lines(), [LineKind::Code(Some("rust".into()))]);
@@ -3053,10 +3065,22 @@ mod tests {
     }
 
     #[test]
+    fn a_fence_opens_a_code_block_only_alone_on_a_plain_line() {
+        assert_eq!(typed_draft("a ```").lines(), [LineKind::Text]);
+        assert_eq!(typed_draft("> ```").lines(), [LineKind::Quote]);
+        let mut draft = Draft::plain("x");
+        draft.apply_edit("```x", 3, None);
+        assert!(draft.convert_typed(3).is_none());
+        assert_eq!(draft.text(), "```x");
+    }
+
+    #[test]
     fn markdown_inside_code_stays_literal() {
         let mut draft = typed_draft("```");
-        let cursor = draft.break_line(3, false).unwrap();
-        assert_eq!(cursor, 0);
+        assert_eq!(
+            (draft.text(), draft.lines()),
+            ("", &[LineKind::Code(None)][..])
+        );
         typed(&mut draft, "a **b**");
         assert_eq!(draft.text(), "a **b**");
         assert!(draft.marks().is_empty());
@@ -3367,7 +3391,7 @@ mod tests {
 
     #[test]
     fn code_indentation_is_kept_on_paste_split_and_send() {
-        let mut draft = typed_draft("```py");
+        let mut draft = Draft::plain("```py");
         let cursor = draft.break_line(draft.text().len(), false).unwrap();
         let pasted = "def f():\n    return 1";
         let mut next = draft.text().to_owned();
